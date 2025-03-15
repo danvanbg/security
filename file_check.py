@@ -1,44 +1,52 @@
-import os
 import time
-import hashlib
-import fsevents
+import logging
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+from tqdm import tqdm
+import os
 
-# Директория за наблюдение
-directory_to_watch = "/Users/YourUsername/Documents"
+# Configure logging
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s')
 
-# Функция за изчисляване на хеш стойност на файл
-def file_hash(file_path):
-    hash_object = hashlib.sha256()
-    with open(file_path, "rb") as file:
-        while chunk := file.read(4096):
-            hash_object.update(chunk)
-    return hash_object.hexdigest()
+# Directory to monitor
+monitor_dir = "/Users/danvan/logs"
 
-# Дикт с хеш стойности на оригиналните файлове
-file_hashes = {}
+# Check if the directory exists
+if not os.path.exists(monitor_dir):
+    logging.error(f"Directory {monitor_dir} does not exist!")
+    exit(1)
 
-# Функция за наблюдение на файловете
-def monitor_files(event):
-    global file_hashes
-    for dirpath, dirnames, filenames in os.walk(directory_to_watch):
-        for filename in filenames:
-            file_path = os.path.join(dirpath, filename)
-            current_hash = file_hash(file_path)
-            if file_path not in file_hashes:
-                file_hashes[file_path] = current_hash
-            elif file_hashes[file_path] != current_hash:
-                print(f"Warning: File {file_path} has been modified or encrypted!")
-                # Можеш да добавиш възстановяване или аларми
+# Progress bar total time
+total_time = 100  # Total ticks for progress bar (simulated)
+progress_interval = 1  # Interval to update progress (can be adjusted)
 
-if __name__ == "__main__":
-    # Наблюдаване на промени в директорията
-    observer = fsevents.Observer()
-    observer.schedule(fsevents.Handler(monitor_files), directory_to_watch, file_events=True)
-    observer.start()
+# Event handler for file system events
+class MyHandler(FileSystemEventHandler):
+    def on_modified(self, event):
+        # Here you can handle events like file modifications
+        logging.info(f"Modified file: {event.src_path}")
 
-    try:
-        while True:
-            time.sleep(10)  # Интервал на проверка
-    except KeyboardInterrupt:
-        observer.stop()
-        observer.join()
+# Set up observer
+observer = Observer()
+handler = MyHandler()
+
+observer.schedule(handler, monitor_dir, recursive=False)
+observer.start()
+
+try:
+    # Progress bar for monitoring task
+    with tqdm(total=total_time, desc="Monitoring Progress", unit="tick") as pbar:
+        logging.info(f"Monitoring directory: {monitor_dir}")
+
+        # Simulate a task and update the progress bar
+        for _ in range(total_time):
+            time.sleep(0.1)  # Simulate some processing time
+            pbar.update(1)  # Update progress by 1 tick
+
+        logging.info("Progress complete!")
+
+finally:
+    # Stop the observer and exit
+    observer.stop()
+    observer.join()  # Wait for the observer to stop
+    logging.info("Observer has stopped and the script is exiting.")
