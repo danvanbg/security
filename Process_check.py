@@ -1,49 +1,79 @@
 import psutil
 import time
-import logging
 from tqdm import tqdm
 
-# Configure logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s')
-
-# Criteria for suspicious processes (customize this as needed)
-suspicious_keywords = ["malware", "hack", "virus", "trojan"]  # Customize with actual suspicious keywords
-suspicious_processes = []
-
-# Progress bar total time
-total_time = 100  # Total ticks for progress bar (simulated)
-progress_interval = 1  # Interval to update progress (can be adjusted)
-
-# Function to check processes
 def check_processes():
-    global suspicious_processes
-    for proc in psutil.process_iter(['pid', 'name', 'exe', 'cmdline']):
-        try:
-            # Log the process information
-            logging.debug(f"Checking process: {proc.info}")
-            cmdline = " ".join(proc.info['cmdline']) if proc.info['cmdline'] else ""
-            # Check for suspicious keywords in the command line or name
-            if any(keyword.lower() in cmdline.lower() or keyword.lower() in proc.info['name'].lower() for keyword in suspicious_keywords):
-                suspicious_processes.append(proc.info)
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-            pass
+    print("Monitoring running processes...")
 
-# Progress bar for monitoring processes
-with tqdm(total=total_time, desc="Monitoring Processes", unit="tick") as pbar:
-    logging.info("Monitoring running processes...")
+    suspicious_processes = []
+    checked_processes = 0  # Counter for checked processes
 
-    # Simulate progress and check processes every time
-    for _ in range(total_time):
-        time.sleep(0.1)  # Simulate some processing time
-        check_processes()  # Check processes periodically
-        pbar.update(1)  # Update progress by 1 tick
+    # List of all processes to be checked
+    all_processes = []
 
-    logging.info("Process monitoring complete!")
+    while True:
+        # Check all running processes
+        for proc in psutil.process_iter(['pid', 'name', 'exe', 'cmdline', 'cpu_percent', 'memory_info']):
+            try:
+                process_info = proc.info
+                pid = process_info['pid']
+                name = process_info['name']
+                exe = process_info['exe']
+                cmdline = process_info['cmdline']
+                cpu_percent = process_info['cpu_percent']
+                memory_info = process_info['memory_info']
+                owner = proc.username()  # Get the owner of the process
 
-# After progress completes, print suspicious processes
-if suspicious_processes:
-    logging.info("\nSuspicious processes detected:")
-    for proc in suspicious_processes:
-        logging.info(f"PID: {proc['pid']}, Name: {proc['name']}, Command: {' '.join(proc['cmdline'])}")
-else:
-    logging.info("No suspicious processes detected.")
+                # Get the parent process PID if available
+                parent_pid = proc.ppid()
+
+                # Check for valid CPU and memory usage values
+                if cpu_percent is not None and memory_info is not None:
+                    if cpu_percent > 80 or memory_info.rss > 500000000:  # Example checks
+                        suspicious_processes.append(process_info)
+
+                # Add the process to the list
+                all_processes.append(process_info)
+
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
+
+        # Break if we check all processes for a while (you can change this condition)
+        if len(all_processes) > 100:
+            break
+
+        time.sleep(1)  # Adjust the sleep time if needed
+
+    # Set up the progress bar
+    with tqdm(total=len(all_processes), desc="Monitoring Processes", dynamic_ncols=True) as pbar:
+        pbar.set_postfix({"Suspicious Process Count": len(suspicious_processes)})
+
+        for _ in all_processes:
+            pbar.update(1)  # Update progress bar for each process
+
+    # Print suspicious processes at the end, each on a new line
+    if suspicious_processes:
+        print("\nSuspicious processes detected:")
+        for proc in suspicious_processes:
+            pid = proc['pid']
+            name = proc['name']
+            cmdline = proc['cmdline']
+            cpu_percent = proc['cpu_percent']
+            memory = proc['memory_info'].rss
+            try:
+                owner = psutil.Process(pid).username()  # Get the owner of the process
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                owner = "Unknown"
+
+            try:
+                parent_pid = psutil.Process(pid).ppid()  # Get the parent PID
+                parent_name = psutil.Process(parent_pid).name() if parent_pid else "Unknown"
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                parent_name = "Unknown"
+
+            print(f"\nPID: {pid}\nName: {name}\nOwner: {owner}\nParent PID: {parent_pid} ({parent_name})\nCommand: {cmdline}\nCPU: {cpu_percent}%\nMemory: {memory} bytes\n")
+    else:
+        print("\nNo suspicious processes detected.")
+
+if __name__ == "__main__":
+    check_processes()  # Check processes periodically
